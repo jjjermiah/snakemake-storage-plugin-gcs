@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.1.0](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/compare/v1.1.1...v0.1.0) (2024-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* expect correct google cloud storage abbreviation in query scheme (gcs://) ([#39](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/issues/39))
+
+### Features
+
+* list storage candidates ([#30](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/issues/30)) ([c7ba28e](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/c7ba28ec3a9cd1b6d2c39806ab785df57ec18f6d))
+* use transfer_manager for downloading multiple blobs concurrently in StorageObject class. ([efe8dbc](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/efe8dbcd7383ae9b86280487ebd782c43fdda1f5))
+
+
+### Bug Fixes
+
+* allow both gs:// and gcs:// as query scheme; internally normalize to gs:// for compatibility with google cloud tools ([#52](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/issues/52)) ([099e87f](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/099e87fcf47e59b5e911f72f50ca3c94aed7444f))
+* expect correct google cloud storage abbreviation in query scheme (gcs://) ([#39](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/issues/39)) ([0ebf52c](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/0ebf52cc6131fe092f638306f104e4c37a88aac4))
+* fix directory support ([#38](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/issues/38)) ([ce3d165](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/ce3d165f94e2d9d8f9469434d88edc0fe1b7f2a1))
+* fixing the directory() issue due to uploading the local_prefix instead of GCS prefix.  ([#41](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/issues/41)) ([27c80dc](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/27c80dce7ad9349e8ae8788984b1525c2478d575))
+* linting error ([07b747d](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/07b747dcc5300a3f2d30806aa58894d0e42c1659))
+* relax towards older crc32c ([#7](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/issues/7)) ([b99dfa0](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/b99dfa07cc4b9bebbc2126d8f725bcd544c91dcf))
+* remove commented line and fix lint error ([9c9a577](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/9c9a577f4e4225d3a88c51e9a6bdb4de5e369c59))
+* repair GCS query string ([#26](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/issues/26)) ([f61e8d0](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/f61e8d0e3b83d3b03ad2eb41ceb0c5902345ef48))
+* replace print with logger.error in StorageObject for download error handling ([a1a3e53](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/a1a3e53804354e96bfc1eb0694bbceb9917bcdd5))
+* update local name construction in StorageObject to use provider local prefix ([10aab6f](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/10aab6fcf57b348f202677299bc35dea43f5b157))
+
+
+### Documentation
+
+* add intro, fix link ([6ec568a](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/6ec568a092aa6b636549a48fc09f0f1ba07b6f00))
+* update metadata ([cceaad1](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/cceaad1c9795cc95c4d420b2ee2ebe0c7fdd5b0d))
+* update readme ([7d23319](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/7d233198eb911f7fb3f73176f2304681272dd080))
+
+
+### Miscellaneous Chores
+
+* release 0.1.0 ([6709181](https://github.com/jjjermiah/snakemake-storage-plugin-gcs/commit/67091814a0b44107809162b6eb6d9178745d8afa))
+
 ## [1.1.1](https://github.com/snakemake/snakemake-storage-plugin-gcs/compare/v1.1.0...v1.1.1) (2024-08-19)
 
 
