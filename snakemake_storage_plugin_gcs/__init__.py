@@ -225,20 +225,6 @@ class StorageProvider(StorageProviderBase):
         """Return False if no rate limiting is needed for this provider."""
         return False
 
-    def default_max_requests_per_second(self) -> float:
-        """Return the default maximum number of requests per second for this storage
-        provider."""
-        ...
-
-    def rate_limiter_key(self, query: str, operation: Operation):
-        """Return a key for identifying a rate limiter given a query and an operation.
-
-        This is used to identify a rate limiter for the query.
-        E.g. for a storage provider like http that would be the host name.
-        For s3 it might be just the endpoint URL.
-        """
-        ...
-
     def list_objects(self, query: Any) -> Iterable[str]:
         """
         Return an iterator over all objects in the storage that match the query.
