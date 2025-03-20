@@ -135,7 +135,7 @@ def google_cloud_retry_predicate(ex: Exception) -> bool:
 
 
 @retry.Retry(predicate=google_cloud_retry_predicate)
-def download_blob(blob: storage.Blob, filename: Path) -> str:
+def download_blob(blob: storage.Blob, filename: Path) -> Path:
     """
     Download and validate storage Blob to a blob_fil.
 
