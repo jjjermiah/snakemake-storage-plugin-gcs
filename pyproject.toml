@@ -57,11 +57,6 @@ warn_no_return = true
 [tool.pixi.feature.dev.dependencies]
 ruff = "*"
 
-[tool.mypy]
-ignore_missing_imports = true # Temporary until https://github.com/snakemake/snakemake-interface-common/pull/55
-disallow_untyped_defs = true
-warn_no_return = true
-
 [tool.pixi.feature.dev.tasks]
 format = "ruff format snakemake_storage_plugin_gcs"
 lint = "ruff check"
