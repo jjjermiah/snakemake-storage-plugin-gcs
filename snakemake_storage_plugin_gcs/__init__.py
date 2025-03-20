@@ -81,21 +81,21 @@ class Crc32cCalculator:
     and then stream-read it again to calculate the hash.
     """
 
-    def __init__(self, fileobj):
+    def __init__(self, fileobj: Any) -> None:
         self._fileobj = fileobj
         self.checksum = Checksum()
 
-    def write(self, chunk):
+    def write(self, chunk: bytes) -> None:
         self._fileobj.write(chunk)
         self._update(chunk)
 
-    def _update(self, chunk):
+    def _update(self, chunk: bytes) -> None:
         """
         Given a chunk from the read in file, update the hexdigest
         """
         self.checksum.update(chunk)
 
-    def hexdigest(self):
+    def hexdigest(self) -> str:
         """
         Return the hexdigest of the hasher.
 
@@ -105,7 +105,7 @@ class Crc32cCalculator:
         return base64.b64encode(self.checksum.digest()).decode("utf-8")
 
 
-def google_cloud_retry_predicate(ex):
+def google_cloud_retry_predicate(ex: Exception) -> bool:
     """
     Google cloud retry with specific Google Cloud errors.
 
@@ -135,7 +135,7 @@ def google_cloud_retry_predicate(ex):
 
 
 @retry.Retry(predicate=google_cloud_retry_predicate)
-def download_blob(blob, filename):
+def download_blob(blob: storage.Blob, filename: str) -> str:
     """
     Download and validate storage Blob to a blob_fil.
 
@@ -172,8 +172,9 @@ class StorageProvider(StorageProviderBase):
     # For compatibility with future changes, you should not overwrite the __init__
     # method. Instead, use __post_init__ to set additional attributes and initialize
     # futher stuff.
+    client: storage.Client
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.client = storage.Client()
 
     @classmethod
@@ -233,6 +234,7 @@ class StorageProvider(StorageProviderBase):
         """
         parsed = urlparse(query)
         bucket_name = parsed.netloc
+
         b = self.client.bucket(bucket_name, user_project=self.settings.project)
         return [k.name for k in b.list_blobs()]
 
@@ -254,7 +256,7 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
     # method. Instead, use __post_init__ to set additional attributes and initialize
     # futher stuff.
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         parsed = urlparse(self.query)
         self.bucket_name = parsed.netloc
         self.key = parsed.path.lstrip("/")
@@ -262,11 +264,11 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
         self._is_dir = None
         self.logger = get_logger()
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         # Close any open connections, unmount stuff, etc.
         pass
 
-    async def inventory(self, cache: IOCacheStorageInterface):
+    async def inventory(self, cache: IOCacheStorageInterface) -> None:
         """
         From this file, try to find as much existence and modification date
         information as possible. Only retrieve that information that comes for free
@@ -330,7 +332,7 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
         Return the modification time
         """
 
-        def get_mtime(blob):
+        def get_mtime(blob) -> float:
             if blob.updated is None:
                 blob.reload()
             return blob.updated.timestamp()
@@ -356,7 +358,7 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
             return self.bucket.get_blob(self.key).size // 1024
 
     @retry.Retry(predicate=google_cloud_retry_predicate, deadline=600)
-    def retrieve_object(self):
+    def retrieve_object(self) -> None:
         """
         Ensure that the object is accessible locally under self.local_path()
         """
@@ -370,7 +372,7 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
     # StorageObjectReadWrite.
 
     @retry.Retry(predicate=google_cloud_retry_predicate)
-    def store_object(self):
+    def store_object(self) -> None:
         """
         Upload an object to storage
 
@@ -406,7 +408,7 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
         if not self.bucket.exists():
             self.client.create_bucket(self.bucket)
 
-    def upload_directory(self, local_directory_path: Path):
+    def upload_directory(self, local_directory_path: Path) -> None:
         """
         Upload a directory to the storage.
         """
@@ -474,7 +476,7 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
     # Helper functions and properties not part of standard interface
     # TODO check parent class and determine if any of these are already implemented
 
-    def directory_entries(self):
+    def directory_entries(self) -> Iterable[storage.Blob]:
         """
         Get directory entries under a prefix.
         """
@@ -484,7 +486,7 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
         return self.client.list_blobs(self.bucket_name, prefix=prefix)
 
     @retry.Retry(predicate=google_cloud_retry_predicate)
-    def is_directory(self):
+    def is_directory(self) -> bool:
         """
         Determine if a a file is a file or directory.
         """
@@ -495,7 +497,7 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
         return any(self.directory_entries())
 
     @retry.Retry(predicate=google_cloud_retry_predicate)
-    def _download_directory(self):
+    def _download_directory(self) -> None:
         """
         Handle download of a storage folder (assists retrieve_blob)
         """
@@ -515,17 +517,17 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
                 )
 
     @lazy_property
-    def bucket(self):
+    def bucket(self) -> storage.Bucket:
         return self.client.bucket(
             self.bucket_name, user_project=self.provider.settings.project
         )
 
     @property
-    def blob(self):
+    def blob(self) -> storage.Blob:
         return self.bucket.blob(self.key)
 
     @property
-    def client(self):
+    def client(self) -> storage.Client:
         return self.provider.client
 
     # Note from @vsoch - functions removed include:
