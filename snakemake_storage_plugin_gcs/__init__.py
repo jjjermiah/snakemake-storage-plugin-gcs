@@ -135,7 +135,7 @@ def google_cloud_retry_predicate(ex: Exception) -> bool:
 
 
 @retry.Retry(predicate=google_cloud_retry_predicate)
-def download_blob(blob: storage.Blob, filename: str) -> str:
+def download_blob(blob: storage.Blob, filename: Path) -> str:
     """
     Download and validate storage Blob to a blob_fil.
 
@@ -146,7 +146,7 @@ def download_blob(blob: storage.Blob, filename: str) -> str:
     """
 
     # create parent directories if necessary
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    filename.parent.mkdir(parents=True, exist_ok=True)
 
     # ideally we could calculate hash while streaming to file with provided function
     # https://github.com/googleapis/python-storage/issues/29
