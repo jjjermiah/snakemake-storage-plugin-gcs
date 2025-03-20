@@ -332,7 +332,7 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
         Return the modification time
         """
 
-        def get_mtime(blob) -> float:
+        def get_mtime(blob: storage.Blob) -> float:
             if blob.updated is None:
                 blob.reload()
             return blob.updated.timestamp()
