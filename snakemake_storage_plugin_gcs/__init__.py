@@ -1,38 +1,37 @@
-from dataclasses import dataclass, field
-import re
-from typing import Any, Iterable, List, Optional
-from snakemake_interface_common.utils import lazy_property
-from snakemake_interface_storage_plugins.settings import StorageProviderSettingsBase
-from snakemake_interface_storage_plugins.storage_provider import (
-    StorageProviderBase,
-    StorageQueryValidationResult,
-    ExampleQuery,
-    QueryType,
-)
-
-from snakemake.exceptions import WorkflowError, CheckSumMismatchException
-from snakemake_interface_storage_plugins.storage_object import (
-    StorageObjectRead,
-    StorageObjectWrite,
-    StorageObjectGlob,
-)
-from snakemake_interface_storage_plugins.common import Operation
-from snakemake_interface_storage_plugins.io import (
-    IOCacheStorageInterface,
-    get_constant_prefix,
-    Mtime,
-)
-from snakemake_interface_common.logging import get_logger
-
-from urllib.parse import urlparse
-import base64
 import os
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Iterable, List, Optional
+from urllib.parse import urlparse
+from collections import defaultdict
+
 import google.cloud.exceptions
+from google.api_core import retry
 from google.cloud import storage
 from google.cloud.storage import transfer_manager
-from google.api_core import retry
-from google_crc32c import Checksum
+from snakemake.exceptions import WorkflowError
+from snakemake_interface_common.logging import get_logger
+from snakemake_interface_common.utils import lazy_property
+from snakemake_interface_storage_plugins.io import (
+    IOCacheStorageInterface,
+    Mtime,
+    get_constant_prefix,
+)
+from snakemake_interface_storage_plugins.settings import StorageProviderSettingsBase
+from snakemake_interface_storage_plugins.storage_object import (
+    StorageObjectGlob,
+    StorageObjectRead,
+    StorageObjectWrite,
+)
+from snakemake_interface_storage_plugins.storage_provider import (
+    ExampleQuery,
+    QueryType,
+    StorageProviderBase,
+    StorageQueryValidationResult,
+)
+from snakemake_storage_plugin_gcs.gcs_utils import download_blob
+from snakemake_storage_plugin_gcs.gcs_utils import google_cloud_retry_predicate
 
 _RE_GCS_SCHEME = re.compile(r"^gcs://")
 
@@ -71,104 +70,10 @@ class StorageProviderSettings(StorageProviderSettingsBase):
     )
 
 
-class Crc32cCalculator:
-    """
-    A wrapper to write a file and calculate a crc32 checksum.
-
-    The Google Python client doesn't provide a way to stream a file being
-    written, so we can wrap the file object in an additional class to
-    do custom handling. This is so we don't need to download the file
-    and then stream-read it again to calculate the hash.
-    """
-
-    def __init__(self, fileobj: Any) -> None:
-        self._fileobj = fileobj
-        self.checksum = Checksum()
-
-    def write(self, chunk: bytes) -> None:
-        self._fileobj.write(chunk)
-        self._update(chunk)
-
-    def _update(self, chunk: bytes) -> None:
-        """
-        Given a chunk from the read in file, update the hexdigest
-        """
-        self.checksum.update(chunk)
-
-    def hexdigest(self) -> str:
-        """
-        Return the hexdigest of the hasher.
-
-        The Base64 encoded CRC32c is in big-endian byte order.
-        See https://cloud.google.com/storage/docs/hashes-etags
-        """
-        return base64.b64encode(self.checksum.digest()).decode("utf-8")
-
-
-def google_cloud_retry_predicate(ex: Exception) -> bool:
-    """
-    Google cloud retry with specific Google Cloud errors.
-
-    Given an exception from Google Cloud, determine if it's one in the
-    listing of transient errors (determined by function
-    google.api_core.retry.if_transient_error(exception)) or determine if
-    triggered by a hash mismatch due to a bad download. This function will
-    return a boolean to indicate if retry should be done, and is typically
-    used with the google.api_core.retry.Retry as a decorator (predicate).
-
-    Arguments:
-      ex (Exception) : the exception passed from the decorated function
-    Returns: boolean to indicate doing retry (True) or not (False)
-    """
-    from requests.exceptions import ReadTimeout
-
-    # Most likely case is Google API transient error.
-    if retry.if_transient_error(ex):
-        return True
-    # Timeouts should be considered for retry as well.
-    if isinstance(ex, ReadTimeout):
-        return True
-    # Could also be checksum mismatch of download.
-    if isinstance(ex, CheckSumMismatchException):
-        return True
-    return False
-
-
-@retry.Retry(predicate=google_cloud_retry_predicate)
-def download_blob(blob: storage.Blob, filename: Path) -> Path:
-    """
-    Download and validate storage Blob to a blob_fil.
-
-    Arguments:
-      blob (storage.Blob) : the Google storage blob object
-      blob_file (str)     : the file path to download to
-    Returns: boolean to indicate doing retry (True) or not (False)
-    """
-
-    # create parent directories if necessary
-    filename.parent.mkdir(parents=True, exist_ok=True)
-
-    # ideally we could calculate hash while streaming to file with provided function
-    # https://github.com/googleapis/python-storage/issues/29
-    with open(filename, "wb") as blob_file:
-        parser = Crc32cCalculator(blob_file)
-        blob.download_to_file(parser)
-    os.sync()
-
-    # **Important** hash can be incorrect or missing if not refreshed
-    blob.reload()
-
-    # Compute local hash and verify correct
-    if parser.hexdigest() != blob.crc32c:
-        os.remove(filename)
-        raise CheckSumMismatchException("The checksum of %s does not match." % filename)
-    return filename
-
-
 # Required:
 # Implementation of your storage provider
 # settings are available via self.settings
-class StorageProvider(StorageProviderBase):
+class StorageProvider(StorageProviderBase[StorageProviderSettings]):
     # For compatibility with future changes, you should not overwrite the __init__
     # method. Instead, use __post_init__ to set additional attributes and initialize
     # futher stuff.
@@ -235,6 +140,14 @@ class StorageProvider(StorageProviderBase):
         parsed = urlparse(query)
         bucket_name = parsed.netloc
 
+        if not self.settings:
+            errmsg = "The Google Cloud Storage provider requires settings to be set."
+            raise WorkflowError
+
+        if not hasattr(self.settings, "project"):
+            errmsg = "The Google Cloud Storage provider requires a project to be set."
+            raise WorkflowError(errmsg)
+
         b = self.client.bucket(bucket_name, user_project=self.settings.project)
         return [k.name for k in b.list_blobs()]
 
@@ -284,14 +197,17 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
          - cache.mtime
          - cache.size
         """
-        if self.get_inventory_parent() in cache.exists_in_storage:
+
+        if not (inventory_key := self.get_inventory_parent()):
+            return
+        elif inventory_key in cache.exists_in_storage:
             # bucket has been inventorized before, stop here
             return
 
         # check if bucket exists
         if not self.bucket.exists():
             cache.exists_in_storage[self.cache_key()] = False
-            cache.exists_in_storage[self.get_inventory_parent()] = False
+            cache.exists_in_storage[inventory_key] = False
         else:
             subfolder = os.path.dirname(self.blob.name)
             for blob in self.client.list_blobs(self.bucket_name, prefix=subfolder):
@@ -416,27 +332,44 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
 
         # if the local directory is empty, we need to create a blob
         # with no content to represent the directory
-        if not os.listdir(local_directory_path):
+        if not any(Path(local_directory_path).iterdir()):
             self.blob.upload_from_string(
                 "", content_type="application/x-www-form-urlencoded;charset=UTF-8"
             )
 
-        for root, _, files in os.walk(local_directory_path):
-            for filename in files:
-                relative_filepath = os.path.join(root, filename)
-                local_prefix = self.provider.local_prefix.as_posix()
+        local_directory = Path(local_directory_path)
+        local_prefix = Path(self.provider.local_prefix)
+        bucket_prefix = Path(self.bucket_name)
 
-                # remove the prefix ("".snakemake/storage/gcs/{bucket_name}/)
-                # this gives us the path to the file relative to the bucket
-                bucket_file_path = (
-                    relative_filepath.removeprefix(local_prefix)
-                    .lstrip("/")
-                    .removeprefix(self.bucket_name)
-                    .lstrip("/")
-                )
+        # a mapping from file path on system to file path in bucket
+        gcs_file_mapping: defaultdict[Path, str] = defaultdict(str)
 
-                blob = self.bucket.blob(bucket_file_path)
-                blob.upload_from_filename(relative_filepath)
+        for file_path in local_directory.rglob("*"):
+            if not file_path.is_file():
+                continue
+
+            # Get the relative path by removing local_prefix and bucket name
+            # This gives us the path relative to the bucket root
+            try:
+                bucket_file_path = file_path.relative_to(local_prefix / bucket_prefix)
+            except ValueError:
+                # Fallback if the path structure is unexpected
+                bucket_file_path = file_path.relative_to(local_directory)
+
+            gcs_file_mapping[file_path] = bucket_file_path.as_posix()
+
+        # Upload all files using transfer manager
+        source_filenames = [str(path) for path in gcs_file_mapping.keys()]
+        blob_names = list(gcs_file_mapping.values())
+
+        results = transfer_manager.upload_many_from_filenames(
+            bucket=self.bucket, source_filenames=source_filenames, blob_names=blob_names
+        )
+
+        # Check results for any errors
+        for name, result in zip(blob_names, results):
+            if isinstance(result, Exception):
+                self.logger.error(f"Failed to upload {name} due to exception: {result}")
 
     @retry.Retry(predicate=google_cloud_retry_predicate)
     def remove(self) -> None:
@@ -518,6 +451,10 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
 
     @lazy_property
     def bucket(self) -> storage.Bucket:
+        if not self.provider.settings:
+            self.logger.debug("No settings found, using default bucket.")
+            return self.client.bucket(self.bucket_name)
+
         return self.client.bucket(
             self.bucket_name, user_project=self.provider.settings.project
         )
