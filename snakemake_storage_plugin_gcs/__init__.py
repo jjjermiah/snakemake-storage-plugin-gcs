@@ -13,6 +13,7 @@ from google.cloud.storage import transfer_manager
 from snakemake.exceptions import WorkflowError
 from snakemake_interface_common.logging import get_logger
 from snakemake_interface_common.utils import lazy_property
+from snakemake_interface_storage_plugins.common import Operation
 from snakemake_interface_storage_plugins.io import (
     IOCacheStorageInterface,
     Mtime,
@@ -130,6 +131,20 @@ class StorageProvider(StorageProviderBase[StorageProviderSettings]):
     def use_rate_limiter(self) -> bool:
         """Return False if no rate limiting is needed for this provider."""
         return False
+
+    def default_max_requests_per_second(self) -> float:
+        """Return the default maximum number of requests per second for this storage
+        provider."""
+        raise NotImplementedError()
+
+    def rate_limiter_key(self, query: str, operation: Operation) -> Any:
+        """Return a key for identifying a rate limiter given a query and an operation.
+
+        This is used to identify a rate limiter for the query.
+        E.g. for a storage provider like http that would be the host name.
+        For s3 it might be just the endpoint URL.
+        """
+        raise NotImplementedError()
 
     def list_objects(self, query: Any) -> Iterable[str]:
         """
