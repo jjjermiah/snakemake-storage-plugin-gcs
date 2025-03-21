@@ -4,8 +4,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, List, Optional
 from urllib.parse import urlparse
-from collections import defaultdict
-
 import google.cloud.exceptions
 from google.api_core import retry
 from google.cloud import storage
@@ -342,49 +340,68 @@ class StorageObject(StorageObjectRead, StorageObjectWrite, StorageObjectGlob):
     def upload_directory(self, local_directory_path: Path) -> None:
         """
         Upload a directory to the storage.
+
+        This function uploads all files from a local directory to a GCS bucket,
+        preserving the directory structure relative to the local directory.
         """
         self.ensure_bucket_exists()
+        local_directory_str = str(local_directory_path)
 
-        # if the local directory is empty, we need to create a blob
-        # with no content to represent the directory
+        DEFAULT_WORKERS = min(8, (os.cpu_count() or 1) * 2)
+
+        # Handle empty directory case
         if not any(Path(local_directory_path).iterdir()):
             self.blob.upload_from_string(
                 "", content_type="application/x-www-form-urlencoded;charset=UTF-8"
             )
+            return
 
-        local_directory = Path(local_directory_path)
-        local_prefix = Path(self.provider.local_prefix)
-        bucket_prefix = Path(self.bucket_name)
+        # Get all files in the directory
+        file_paths = [
+            str(file_path)
+            for file_path in Path(local_directory_path).rglob("*")
+            if file_path.is_file()
+        ]
 
-        # a mapping from file path on system to file path in bucket
-        gcs_file_mapping: defaultdict[Path, str] = defaultdict(str)
+        if not file_paths:
+            warnmsg = f"No files found in directory {local_directory_path}"
+            self.logger.warning(warnmsg)
+            return
 
-        for file_path in local_directory.rglob("*"):
-            if not file_path.is_file():
-                continue
+        # Use the key as prefix for the blob names
+        # If key doesn't end with slash and isn't empty, add one
+        blob_name_prefix = ""
+        if self.key:
+            blob_name_prefix = self.key
+            if not blob_name_prefix.endswith("/"):
+                blob_name_prefix += "/"
 
-            # Get the relative path by removing local_prefix and bucket name
-            # This gives us the path relative to the bucket root
-            try:
-                bucket_file_path = file_path.relative_to(local_prefix / bucket_prefix)
-            except ValueError:
-                # Fallback if the path structure is unexpected
-                bucket_file_path = file_path.relative_to(local_directory)
+        # Upload files using transfer manager with optimized parameters
+        try:
+            results = transfer_manager.upload_many_from_filenames(
+                bucket=self.bucket,
+                filenames=file_paths,
+                source_directory=local_directory_str,
+                blob_name_prefix=blob_name_prefix,
+                skip_if_exists=False,  # Can be made configurable if needed
+                worker_type=transfer_manager.PROCESS,  # Using process workers for better performance
+                max_workers=DEFAULT_WORKERS,  # Using default number of workers
+                deadline=None,  # Can be made configurable
+                raise_exception=False,  # Handle exceptions ourselves for better logging
+            )
 
-            gcs_file_mapping[file_path] = bucket_file_path.as_posix()
+            # Check results for any errors
+            for filepath, result in zip(file_paths, results):
+                if isinstance(result, Exception):
+                    relative_path = os.path.relpath(filepath, local_directory_str)
+                    blob_name = f"{blob_name_prefix}{relative_path}"
+                    self.logger.error(f"Failed to upload {blob_name}: {result}")
 
-        # Upload all files using transfer manager
-        source_filenames = [str(path) for path in gcs_file_mapping.keys()]
-        blob_names = list(gcs_file_mapping.values())
-
-        results = transfer_manager.upload_many_from_filenames(
-            bucket=self.bucket, source_filenames=source_filenames, blob_names=blob_names
-        )
-
-        # Check results for any errors
-        for name, result in zip(blob_names, results):
-            if isinstance(result, Exception):
-                self.logger.error(f"Failed to upload {name} due to exception: {result}")
+        except Exception as e:
+            self.logger.error(f"Directory upload failed: {e}")
+            raise WorkflowError(
+                f"Failed to upload directory {local_directory_path} to {self.query}: {e}"
+            )
 
     @retry.Retry(predicate=google_cloud_retry_predicate)
     def remove(self) -> None:
